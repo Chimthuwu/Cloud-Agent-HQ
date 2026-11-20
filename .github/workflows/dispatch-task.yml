@@ -20,6 +20,22 @@ on:
         required: false
         type: string
         default: "opencode"
+      task_id:
+        description: "Task ID (from task_json)"
+        required: false
+        type: string
+      base_branch:
+        description: "Base branch (from task_json)"
+        required: false
+        type: string
+      timeout_minutes:
+        description: "Timeout minutes (from task_json)"
+        required: false
+        type: string
+      tracking_issue:
+        description: "Tracking issue number"
+        required: false
+        type: string
       dry_run:
         description: "Validate only, don't dispatch"
         required: false

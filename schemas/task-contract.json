@@ -39,7 +39,7 @@
     },
     "reviewer_profile": {
       "type": "string",
-      "enum": ["opencode", "codex", "gemini", "claude", "human"],
+      "enum": ["opencode", "codex", "gemini", "claude", "human", "different"],
       "default": "different",
       "description": "Reviewer profile (different = auto-assign different worker)"
     },

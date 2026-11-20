@@ -51,7 +51,7 @@ class CloudAgentHQ:
     
     def _generate_task_id(self, repo: str) -> str:
         """Generate unique task ID."""
-        repo_slug = repo.replace("/", "-").replace(".", "-")
+        repo_slug = repo.lower().replace("/", "-").replace(".", "-")
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         unique = uuid.uuid4().hex[:6]
         return f"{repo_slug}-{timestamp}-{unique}"
