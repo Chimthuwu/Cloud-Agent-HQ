@@ -1,0 +1,93 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/Chimthuwu/Cloud-Agent-HQ/schemas/task-contract.json",
+  "title": "Cloud Agent Task Contract",
+  "description": "Canonical schema for a coding task dispatched to cloud workers",
+  "type": "object",
+  "required": [
+    "task_id",
+    "repository",
+    "base_branch",
+    "instructions",
+    "worker_profile"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "description": "Unique task identifier (repo-slug-NNNN-YYYYMMDD-HHMMSS)"
+    },
+    "repository": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$",
+      "description": "Target repository in owner/name format"
+    },
+    "base_branch": {
+      "type": "string",
+      "default": "main",
+      "description": "Base branch to work from"
+    },
+    "instructions": {
+      "type": "string",
+      "minLength": 10,
+      "description": "Detailed task instructions for the worker"
+    },
+    "worker_profile": {
+      "type": "string",
+      "enum": ["opencode", "codex", "gemini", "claude"],
+      "description": "Worker profile to execute the task"
+    },
+    "reviewer_profile": {
+      "type": "string",
+      "enum": ["opencode", "codex", "gemini", "claude", "human"],
+      "default": "different",
+      "description": "Reviewer profile (different = auto-assign different worker)"
+    },
+    "timeout_minutes": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 120,
+      "default": 30,
+      "description": "Maximum execution time before timeout"
+    },
+    "tool_permissions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "default": ["read", "write", "edit", "bash", "grep", "glob"],
+      "description": "Allowed tool permissions for the worker"
+    },
+    "environment_vars": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "description": "Additional environment variables for the worker"
+    },
+    "verification_commands": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Commands to run for verification after implementation"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Arbitrary metadata for tracking, tagging, etc."
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["low", "normal", "high", "urgent"],
+      "default": "normal"
+    },
+    "labels": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "GitHub labels to apply to tracking issue/PR"
+    }
+  },
+  "additionalProperties": false
+}

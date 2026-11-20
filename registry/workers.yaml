@@ -1,0 +1,169 @@
+# Cloud Agent HQ — Worker Profiles Registry
+# Defines available coding workers, their capabilities, and execution parameters.
+# Each worker maps to a GitHub Actions workflow + adapter script.
+
+workers:
+  opencode:
+    name: "OpenCode"
+    description: "OpenCode AI coding agent - primary worker for Cloud Agent HQ"
+    cli: "opencode"
+    version_requirement: ">=2.3.0"
+    install_command: "npm install -g opencode-ai@latest"
+    auth_method: "api_key"
+    auth_env_var: "OPENCODE_GO_API_KEY"
+    config_file: "workers/opencode/config.yaml"
+    adapter_script: "workers/opencode/adapter.sh"
+    verify_script: "workers/opencode/verify.sh"
+    default_model: "sonnet-4"
+    model_env_var: "OPENCODE_MODEL"
+    max_concurrent: 5
+    timeout_minutes: 30
+    capabilities:
+      - code_generation
+      - refactoring
+      - testing
+      - documentation
+      - debugging
+    supported_repositories:
+      - public
+      - private
+    gitHub_actions:
+      workflow_file: ".github/workflows/worker-opencode.yml"
+      runner: "ubuntu-latest"
+      permissions:
+        contents: write
+        pull_requests: write
+        issues: write
+    environment_variables:
+      - OPENCODE_GO_API_KEY
+      - OPENCODE_MODEL
+    notes: |
+      First fully implemented and verified worker.
+      Uses OpenCode Go API key (free tier available).
+      MCP server integration available for Hermes local use.
+
+  codex:
+    name: "Codex CLI"
+    description: "OpenAI Codex CLI - cloud-enabled coding agent"
+    cli: "codex"
+    version_requirement: ">=0.170.0"
+    install_command: "npm install -g @openai/codex@latest"
+    auth_method: "device_code"
+    auth_env_var: "OPENAI_API_KEY"
+    config_file: "workers/codex/config.yaml"
+    adapter_script: "workers/codex/adapter.sh"
+    verify_script: "workers/codex/verify.sh"
+    default_model: "gpt-4o"
+    model_env_var: "CODEX_MODEL"
+    max_concurrent: 3
+    timeout_minutes: 30
+    capabilities:
+      - code_generation
+      - debugging
+      - code_review
+      - testing
+    supported_repositories:
+      - public
+      # private requires org-level OAuth app
+    gitHub_actions:
+      workflow_file: ".github/workflows/worker-codex.yml"
+      runner: "ubuntu-latest"
+      permissions:
+        contents: write
+        pull_requests: write
+        issues: write
+    environment_variables:
+      - OPENAI_API_KEY
+      - CODEX_MODEL
+    notes: |
+      Requires device-code OAuth flow (not suitable for fully headless CI yet).
+      For GitHub Actions, prefer API key authentication if available.
+      Implementation deferred until OAuth automation verified.
+
+  gemini:
+    name: "Gemini CLI"
+    description: "Google Gemini CLI - large context coding agent"
+    cli: "gemini"
+    version_requirement: ">=0.1.0"
+    install_command: "npm install -g @google/gemini-cli@latest"
+    auth_method: "api_key"
+    auth_env_var: "GOOGLE_API_KEY"
+    config_file: "workers/gemini/config.yaml"
+    adapter_script: "workers/gemini/adapter.sh"
+    verify_script: "workers/gemini/verify.sh"
+    default_model: "gemini-2.5-pro"
+    model_env_var: "GEMINI_MODEL"
+    max_concurrent: 3
+    timeout_minutes: 30
+    capabilities:
+      - code_generation
+      - large_context_analysis
+      - documentation
+      - code_review
+    supported_repositories:
+      - public
+    gitHub_actions:
+      workflow_file: ".github/workflows/worker-gemini.yml"
+      runner: "ubuntu-latest"
+      permissions:
+        contents: write
+        pull_requests: write
+        issues: write
+    environment_variables:
+      - GOOGLE_API_KEY
+      - GEMINI_MODEL
+    notes: |
+      Gemini CLI needs to be installed and verified.
+      Large context window (2M tokens) useful for big codebases.
+      Free tier available with Google AI Studio API key.
+
+  claude:
+    name: "Claude Code"
+    description: "Anthropic Claude Code - advanced reasoning coding agent"
+    cli: "claude"
+    version_requirement: ">=2.1.322"
+    install_command: "npm install -g @anthropic-ai/claude-code@latest"
+    auth_method: "oauth"
+    auth_env_var: "ANTHROPIC_API_KEY"
+    config_file: "workers/claude/config.yaml"
+    adapter_script: "workers/claude/adapter.sh"
+    verify_script: "workers/claude/verify.sh"
+    default_model: "claude-sonnet-4"
+    model_env_var: "CLAUDE_MODEL"
+    max_concurrent: 2
+    timeout_minutes: 45
+    capabilities:
+      - code_generation
+      - architecture
+      - code_review
+      - complex_reasoning
+      - debugging
+    supported_repositories:
+      - public
+      # private requires org-level OAuth
+    gitHub_actions:
+      workflow_file: ".github/workflows/worker-claude.yml"
+      runner: "ubuntu-latest"
+      permissions:
+        contents: write
+        pull_requests: write
+        issues: write
+    environment_variables:
+      - ANTHROPIC_API_KEY
+      - CLAUDE_MODEL
+    notes: |
+      Requires Anthropic OAuth (device code or web flow).
+      Not yet automated for headless CI execution.
+      Implementation deferred until auth automation verified.
+
+# Global concurrency limits (GitHub Free tier)
+global_limits:
+  max_concurrent_jobs_public: 20
+  max_concurrent_jobs_private: 5  # varies by plan
+  per_worker_max:
+    opencode: 5
+    codex: 3
+    gemini: 3
+    claude: 2
+  queue_enabled: true
+  queue_poll_interval_minutes: 5

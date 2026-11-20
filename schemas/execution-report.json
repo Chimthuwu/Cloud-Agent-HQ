@@ -1,0 +1,120 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/Chimthuwu/Cloud-Agent-HQ/schemas/execution-report.json",
+  "title": "Worker Execution Report",
+  "description": "Structured output from a worker after task execution",
+  "type": "object",
+  "required": [
+    "task_id",
+    "worker_profile",
+    "status",
+    "branch",
+    "pr_number",
+    "summary"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "description": "Original task identifier"
+    },
+    "worker_profile": {
+      "type": "string",
+      "enum": ["opencode", "codex", "gemini", "claude"],
+      "description": "Worker profile that executed the task"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["success", "partial", "failed", "timeout", "cancelled"],
+      "description": "Overall execution status"
+    },
+    "branch": {
+      "type": "string",
+      "description": "Git branch name created for this task"
+    },
+    "pr_number": {
+      "type": "integer",
+      "description": "Pull request number created (0 if failed before PR)"
+    },
+    "pr_url": {
+      "type": "string",
+      "format": "uri",
+      "description": "Full URL to the pull request"
+    },
+    "summary": {
+      "type": "string",
+      "description": "Human-readable summary of what was done"
+    },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "List of files changed (paths relative to repo root)"
+    },
+    "verification_results": {
+      "type": "object",
+      "properties": {
+        "commands_run": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "passed": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "failed": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "output": {
+          "type": "string",
+          "description": "Combined stdout/stderr from verification"
+        }
+      },
+      "description": "Results of verification commands"
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Error messages if status is failed/partial"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Non-fatal warnings during execution"
+    },
+    "duration_seconds": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Total execution time in seconds"
+    },
+    "tokens_used": {
+      "type": "object",
+      "properties": {
+        "input": { "type": "integer" },
+        "output": { "type": "integer" },
+        "total": { "type": "integer" }
+      },
+      "description": "Token usage if available from worker"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional metadata from worker"
+    },
+    "started_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when execution started"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when execution completed"
+    }
+  },
+  "additionalProperties": false
+}

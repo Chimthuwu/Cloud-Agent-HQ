@@ -1,0 +1,221 @@
+name: Review Pull Request
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Pull request number to review"
+        required: true
+        type: string
+      repository:
+        description: "Repository (owner/name)"
+        required: true
+        type: string
+      reviewer_profile:
+        description: "Reviewer worker profile"
+        required: true
+        type: string
+        default: "different"
+      task_id:
+        description: "Original task ID"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  review:
+    name: Independent Code Review
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PR_NUMBER: ${{ github.event.inputs.pr_number }}
+      REPOSITORY: ${{ github.event.inputs.repository }}
+      REVIEWER_PROFILE: ${{ github.event.inputs.reviewer_profile }}
+      TASK_ID: ${{ github.event.inputs.task_id }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TARGET_REPO_PAT: ${{ secrets.CLOUD_AGENT_HQ_PAT }}
+    steps:
+      - name: Checkout Cloud-Agent-HQ
+        uses: actions/checkout@v4
+        with:
+          path: cloud-agent-hq
+
+      - name: Fetch PR details
+        id: pr-details
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: "${{ github.event.inputs.repository.split('/')[0] }}",
+              repo: "${{ github.event.inputs.repository.split('/')[1] }}",
+              pull_number: parseInt("${{ github.event.inputs.pr_number }}")
+            });
+            
+            const files = await github.rest.pulls.listFiles({
+              owner: "${{ github.event.inputs.repository.split('/')[0] }}",
+              repo: "${{ github.event.inputs.repository.split('/')[1] }}",
+              pull_number: parseInt("${{ github.event.inputs.pr_number }}")
+            });
+            
+            return {
+              title: pr.data.title,
+              body: pr.data.body,
+              base: pr.data.base.ref,
+              head: pr.data.head.ref,
+              files: files.data.map(f => ({ filename: f.filename, status: f.status, additions: f.additions, deletions: f.deletions, patch: f.patch }))
+            };
+
+      - name: Determine reviewer
+        id: determine-reviewer
+        run: |
+          REVIEWER="${{ github.event.inputs.reviewer_profile }}"
+          if [ "$REVIEWER" = "different" ]; then
+            # Extract implementer from PR labels or default to opencode
+            IMPLEMENTER=$(gh pr view "${{ github.event.inputs.pr_number }}" --repo "${{ github.event.inputs.repository }}" --json labels --jq '.labels[].name' | grep -E 'worker:(opencode|codex|gemini|claude)' | cut -d: -f2 || echo "opencode")
+            case $IMPLEMENTER in
+              opencode) REVIEWER="codex" ;;
+              codex) REVIEWER="opencode" ;;
+              gemini) REVIEWER="opencode" ;;
+              claude) REVIEWER="opencode" ;;
+              *) REVIEWER="opencode" ;;
+            esac
+          fi
+          echo "reviewer=$REVIEWER" >> $GITHUB_OUTPUT
+
+      - name: Run reviewer adapter
+        id: review
+        working-directory: cloud-agent-hq
+        env:
+          PR_DETAILS: ${{ steps.pr-details.outputs.result }}
+          REVIEWER: ${{ steps.determine-reviewer.outputs.reviewer }}
+          TASK_ID: ${{ github.event.inputs.task_id }}
+        run: |
+          bash workers/${{ steps.determine-reviewer.outputs.reviewer }}/review-adapter.sh \
+            "${{ github.event.inputs.repository }}" \
+            "${{ github.event.inputs.pr_number }}" \
+            ../review-report.json
+
+      - name: Post review to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('review-report.json', 'utf8'));
+            
+            const owner = "${{ github.event.inputs.repository.split('/')[0] }}";
+            const repo = "${{ github.event.inputs.repository.split('/')[1] }}";
+            const prNumber = parseInt("${{ github.event.inputs.pr_number }}");
+            
+            // Build review body
+            let body = `## Independent Code Review\n\n`;
+            body += `**Reviewer:** ${{ steps.determine-reviewer.outputs.reviewer }}\n`;
+            body += `**Decision:** ${report.decision.toUpperCase()}\n`;
+            body += `**Summary:** ${report.summary}\n\n`;
+            
+            if (report.findings && report.findings.length > 0) {
+              body += `### Findings\n\n`;
+              for (const finding of report.findings) {
+                const emoji = {
+                  critical: '🔴',
+                  major: '🟠',
+                  minor: '🟡',
+                  info: '🔵',
+                  praise: '🟢'
+                }[finding.severity] || '⚪';
+                
+                body += `${emoji} **[${finding.severity.toUpperCase()}]** ${finding.category}`;
+                if (finding.file) body += ` in \`${finding.file}\``;
+                if (finding.line) body += `:${finding.line}`;
+                body += `\n${finding.message}\n`;
+                if (finding.suggestion) body += `> 💡 *Suggestion: ${finding.suggestion}*\n`;
+                body += `\n`;
+              }
+            }
+            
+            if (report.verification) {
+              body += `### Verification\n`;
+              body += `- Build: ${report.verification.build_passed ? '✅' : '❌'}\n`;
+              body += `- Tests: ${report.verification.tests_passed ? '✅' : '❌'}\n`;
+              body += `- Lint: ${report.verification.lint_passed ? '✅' : '❌'}\n`;
+              body += `- TypeCheck: ${report.verification.typecheck_passed ? '✅' : '❌'}\n`;
+            }
+            
+            body += `\n---\n*Review by Cloud Agent HQ (${{ steps.determine-reviewer.outputs.reviewer }} worker)*`;
+            
+            // Submit review
+            const event = report.decision === 'approve' ? 'APPROVE' : 
+                          report.decision === 'request_changes' ? 'REQUEST_CHANGES' : 'COMMENT';
+            
+            await github.rest.pulls.createReview({
+              owner,
+              repo,
+              pull_number: prNumber,
+              event,
+              body
+            });
+            
+            console.log(`Review submitted: ${event}`);
+
+      - name: Update tracking issue
+        if: ${{ github.event.inputs.task_id != '' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = JSON.parse(fs.readFileSync('review-report.json', 'utf8'));
+            
+            // Find tracking issue
+            const issues = await github.rest.issues.listForRepo({
+              owner: "Chimthuwu",
+              repo: "Cloud-Agent-HQ",
+              labels: "cloud-agent-task",
+              per_page: 100
+            });
+            
+            const trackingIssue = issues.data.find(issue => issue.title.includes("${{ github.event.inputs.task_id }}"));
+            
+            if (trackingIssue) {
+              await github.rest.issues.createComment({
+                owner: "Chimthuwu",
+                repo: "Cloud-Agent-HQ",
+                issue_number: trackingIssue.number,
+                body: `📋 **Code Review Complete**
+                
+                **Task ID:** \`${{ github.event.inputs.task_id }}\`
+                **PR:** #${{ github.event.inputs.pr_number }}
+                **Reviewer:** ${{ steps.determine-reviewer.outputs.reviewer }}
+                **Decision:** ${report.decision.toUpperCase()}
+                
+                ${report.summary}`
+              });
+              
+              if (report.decision === 'approve') {
+                await github.rest.issues.addLabels({
+                  owner: "Chimthuwu",
+                  repo: "Cloud-Agent-HQ",
+                  issue_number: trackingIssue.number,
+                  labels: ["status:reviewed", "review:approved"]
+                });
+              } else if (report.decision === 'request_changes') {
+                await github.rest.issues.addLabels({
+                  owner: "Chimthuwu",
+                  repo: "Cloud-Agent-HQ",
+                  issue_number: trackingIssue.number,
+                  labels: ["status:reviewed", "review:changes-requested"]
+                });
+              }
+            }
+
+      - name: Upload review report
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-report-${{ github.event.inputs.pr_number }}
+          path: review-report.json
+          retention-days: 30
+
+concurrency:
+  group: cloud-agent-review-${{ github.event.inputs.pr_number }}
+  cancel-in-progress: false

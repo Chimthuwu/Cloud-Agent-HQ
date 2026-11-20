@@ -1,0 +1,69 @@
+# Cloud Agent HQ — Repository Registry
+# Register repositories that can receive cloud agent tasks.
+# Public repos: auto-eligible for free GitHub Actions runners.
+# Private repos: require explicit enable + minute allowance verification.
+
+repositories:
+  # GameVolley - Public Electron game, first test target
+  - name: "Chimthuwu/GameVolley"
+    visibility: public
+    default_branch: main
+    registered_at: "2026-11-21"
+    instructions_files:
+      - "AGENTS.md"
+      - "CLAUDE.md"
+      - "README.md"
+      - "TODO.md"
+      - "docs/ARCHITECTURE.md"
+    worker_profiles:
+      - "opencode"
+      - "codex"
+      - "gemini"
+      - "claude"
+    review_required: true
+    auto_dispatch: true
+    notes: |
+      Electron game built with vanilla JS/TypeScript.
+      Low-risk test target for cloud agent validation.
+      Existing workflows: build.yml (multi-platform), deploy-site.yml.
+    labels:
+      - "cloud-agent:ready"
+      - "cloud-agent:public"
+
+  # LISA - Private bot framework, deferred until public workflow verified
+  - name: "Chimthuwu/LISA"
+    visibility: private
+    default_branch: main
+    registered_at: "2026-11-21"
+    instructions_files:
+      - "AGENTS.md"
+      - "SETUP.agent.md"
+      - "GOALS.md"
+      - "TODO.md"
+      - "UX todo.md"
+    worker_profiles:
+      - "opencode"
+      - "codex"
+    review_required: true
+    auto_dispatch: false
+    minute_budget_check: true
+    notes: |
+      Private repository - consumes GitHub Actions minutes.
+      Enable only after verifying public workflow and checking minute allowance.
+      Requires: OPENCODE_GO_API_KEY, potentially ANTHROPIC_API_KEY.
+    labels:
+      - "cloud-agent:private"
+      - "cloud-agent:deferred"
+
+# Template for future registrations:
+# - name: "Chimthuwu/REPO_NAME"
+#   visibility: public|private
+#   default_branch: main
+#   registered_at: "YYYY-MM-DD"
+#   instructions_files: [AGENTS.md, CLAUDE.md, README.md, TODO.md]
+#   worker_profiles: [opencode, codex, gemini, claude]
+#   review_required: true
+#   auto_dispatch: true|false
+#   minute_budget_check: true|false  # only for private
+#   notes: "Description"
+#   labels: [cloud-agent:ready, cloud-agent:public|private]

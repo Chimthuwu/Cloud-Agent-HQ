@@ -1,0 +1,55 @@
+# Cloud Agent HQ — OpenCode Worker Configuration
+# Worker-specific settings for OpenCode adapter
+
+# Model Configuration
+model:
+  default: "sonnet-4"
+  # Override via OPENCODE_MODEL environment variable
+  # Available: sonnet-4, opus-4, haiku-3, gpt-4o, etc. (depends on OpenCode Go API access)
+
+# Execution Settings
+execution:
+  timeout_minutes: 30
+  max_retries: 1
+  retry_delay_seconds: 10
+
+# Tool Permissions (default, can be overridden per-task)
+permissions:
+  default:
+    - "read"
+    - "write"
+    - "edit"
+    - "bash"
+    - "grep"
+    - "glob"
+    - "task"
+  # Restricted mode for untrusted tasks
+  restricted:
+    - "read"
+    - "grep"
+    - "glob"
+
+# Git Configuration
+git:
+  author_name: "cloud-agent[bot]"
+  author_email: "cloud-agent@users.noreply.github.com"
+  commit_prefix: "cloud-agent"
+  branch_prefix: "cloud-agent"
+
+# Verification Settings
+verification:
+  # Default verification commands to run after implementation
+  default_commands: []
+  # Continue on verification failure (mark as partial instead of failed)
+  continue_on_failure: true
+
+# Output Settings
+output:
+  report_format: "json"
+  include_diff: true
+  include_tokens: false  # OpenCode doesn't expose token counts easily
+
+# Error Handling
+error_handling:
+  max_errors_before_abort: 10
+  treat_warnings_as_errors: false

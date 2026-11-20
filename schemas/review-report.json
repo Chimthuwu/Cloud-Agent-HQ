@@ -1,0 +1,110 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/Chimthuwu/Cloud-Agent-HQ/schemas/review-report.json",
+  "title": "Code Review Report",
+  "description": "Structured output from an independent code review",
+  "type": "object",
+  "required": [
+    "task_id",
+    "pr_number",
+    "reviewer_profile",
+    "decision",
+    "summary"
+  ],
+  "properties": {
+    "task_id": {
+      "type": "string",
+      "description": "Original task identifier"
+    },
+    "pr_number": {
+      "type": "integer",
+      "description": "Pull request number reviewed"
+    },
+    "reviewer_profile": {
+      "type": "string",
+      "enum": ["opencode", "codex", "gemini", "claude", "human"],
+      "description": "Profile that performed the review"
+    },
+    "decision": {
+      "type": "string",
+      "enum": ["approve", "request_changes", "comment"],
+      "description": "Review decision"
+    },
+    "summary": {
+      "type": "string",
+      "description": "High-level review summary"
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "major", "minor", "info", "praise"]
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "task_completion",
+              "architecture",
+              "conventions",
+              "regression",
+              "security",
+              "testing",
+              "build",
+              "documentation",
+              "performance"
+            ]
+          },
+          "file": {
+            "type": "string",
+            "description": "File path (relative to repo root)"
+          },
+          "line": {
+            "type": "integer",
+            "description": "Line number (if applicable)"
+          },
+          "message": {
+            "type": "string",
+            "description": "Detailed finding description"
+          },
+          "suggestion": {
+            "type": "string",
+            "description": "Concrete suggestion for improvement"
+          }
+        },
+        "required": ["severity", "category", "message"]
+      },
+      "description": "Detailed review findings"
+    },
+    "verification": {
+      "type": "object",
+      "properties": {
+        "build_passed": { "type": "boolean" },
+        "tests_passed": { "type": "boolean" },
+        "lint_passed": { "type": "boolean" },
+        "typecheck_passed": { "type": "boolean" },
+        "custom_checks": {
+          "type": "object",
+          "additionalProperties": { "type": "boolean" }
+        }
+      },
+      "description": "Automated verification results"
+    },
+    "requires_human_review": {
+      "type": "boolean",
+      "default": false,
+      "description": "Whether human review is needed before merge"
+    },
+    "duration_seconds": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "reviewed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}
