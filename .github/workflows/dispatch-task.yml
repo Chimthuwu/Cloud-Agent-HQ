@@ -73,23 +73,21 @@ jobs:
       - name: Load task JSON
         id: load-task
         run: |
+          # Write task JSON to file to avoid shell escaping issues
+          echo '${{ github.event.inputs.task_json }}' > task-input.json
           python << 'EOF'
           import json, sys, os
           
-          task_json_input = "${{ github.event.inputs.task_json }}"
-          task_file = "${{ github.event.inputs.task_file }}"
-          
-          if task_file and os.path.exists(task_file):
-              with open(task_file) as f:
-                  task = json.load(f)
-          else:
-              task = json.loads(task_json_input)
+          with open("task-input.json") as f:
+              task = json.load(f)
           
           # Override with workflow inputs if provided
-          if "${{ github.event.inputs.repository }}":
-              task["repository"] = "${{ github.event.inputs.repository }}"
-          if "${{ github.event.inputs.worker_profile }}":
-              task["worker_profile"] = "${{ github.event.inputs.worker_profile }}"
+          repo_override = "${{ github.event.inputs.repository }}"
+          worker_override = "${{ github.event.inputs.worker_profile }}"
+          if repo_override:
+              task["repository"] = repo_override
+          if worker_override:
+              task["worker_profile"] = worker_override
           
           # Validate required fields
           required = ["task_id", "repository", "base_branch", "instructions", "worker_profile"]
