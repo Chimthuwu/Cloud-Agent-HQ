@@ -72,18 +72,21 @@ jobs:
 
       - name: Load task JSON
         id: load-task
+        env:
+          TASK_JSON_INPUT: ${{ github.event.inputs.task_json }}
+          REPO_OVERRIDE: ${{ github.event.inputs.repository }}
+          WORKER_OVERRIDE: ${{ github.event.inputs.worker_profile }}
         run: |
-          # Use jq to write task JSON to file (handles escaping properly)
-          echo '${{ github.event.inputs.task_json }}' | jq . > task-input.json
           python << 'EOF'
           import json, sys, os
           
-          with open("task-input.json") as f:
-              task = json.load(f)
+          task_json_input = os.environ.get("TASK_JSON_INPUT", "{}")
+          repo_override = os.environ.get("REPO_OVERRIDE", "")
+          worker_override = os.environ.get("WORKER_OVERRIDE", "")
+          
+          task = json.loads(task_json_input)
           
           # Override with workflow inputs if provided
-          repo_override = "${{ github.event.inputs.repository }}"
-          worker_override = "${{ github.event.inputs.worker_profile }}"
           if repo_override:
               task["repository"] = repo_override
           if worker_override:
