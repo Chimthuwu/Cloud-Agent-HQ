@@ -1,0 +1,29 @@
+name: Test Dispatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_json:
+        description: "Task JSON"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Parse JSON
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const taskJson = `${{ github.event.inputs.task_json }}`;
+            console.log('Task JSON:', taskJson);
+            const task = JSON.parse(taskJson);
+            console.log('Task ID:', task.task_id);
+            core.setOutput('task_id', task.task_id);
