@@ -73,8 +73,8 @@ jobs:
       - name: Load task JSON
         id: load-task
         run: |
-          # Write task JSON to file to avoid shell escaping issues
-          echo '${{ github.event.inputs.task_json }}' > task-input.json
+          # Use jq to write task JSON to file (handles escaping properly)
+          echo '${{ github.event.inputs.task_json }}' | jq . > task-input.json
           python << 'EOF'
           import json, sys, os
           
