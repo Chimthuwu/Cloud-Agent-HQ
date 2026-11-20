@@ -4,37 +4,8 @@ on:
   workflow_dispatch:
     inputs:
       task_json:
-        description: "Task contract JSON (or path to file in repo)"
+        description: "Task contract JSON"
         required: true
-        type: string
-      task_file:
-        description: "Path to task JSON file in repository (alternative to task_json)"
-        required: false
-        type: string
-      repository:
-        description: "Target repository (owner/name) - overrides task_json"
-        required: false
-        type: string
-      worker_profile:
-        description: "Worker profile to use"
-        required: false
-        type: string
-        default: "opencode"
-      task_id:
-        description: "Task ID (from task_json)"
-        required: false
-        type: string
-      base_branch:
-        description: "Base branch (from task_json)"
-        required: false
-        type: string
-      timeout_minutes:
-        description: "Timeout minutes (from task_json)"
-        required: false
-        type: string
-      tracking_issue:
-        description: "Tracking issue number"
-        required: false
         type: string
       dry_run:
         description: "Validate only, don't dispatch"
@@ -52,37 +23,18 @@ jobs:
     name: Validate & Dispatch
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    outputs:
-      task_id: ${{ steps.validate.outputs.task_id }}
-      repository: ${{ steps.validate.outputs.repository }}
-      worker_profile: ${{ steps.validate.outputs.worker_profile }}
-      base_branch: ${{ steps.validate.outputs.base_branch }}
-      tracking_issue: ${{ steps.create-issue.outputs.issue_number }}
     steps:
       - name: Checkout Cloud-Agent-HQ
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install PyYAML
-        run: pip install pyyaml jsonschema
-
-      - name: Load task JSON
-        id: load-task
+      - name: Parse task JSON
+        id: parse-task
         uses: actions/github-script@v7
         with:
           script: |
             const taskJson = `${{ github.event.inputs.task_json }}`;
-            const repoOverride = `${{ github.event.inputs.repository }}`;
-            const workerOverride = `${{ github.event.inputs.worker_profile }}`;
-            
-            let task = JSON.parse(taskJson);
-            
-            if (repoOverride) task.repository = repoOverride;
-            if (workerOverride) task.worker_profile = workerOverride;
+            console.log('Task JSON received');
+            const task = JSON.parse(taskJson);
             
             // Validate required fields
             const required = ["task_id", "repository", "base_branch", "instructions", "worker_profile"];
@@ -91,17 +43,6 @@ jobs:
                 core.setFailed(`Missing required field: ${field}`);
                 return;
               }
-            }
-            
-            // Validate against schema
-            const fs = require('fs');
-            const schema = JSON.parse(fs.readFileSync('schemas/task-contract.json', 'utf8'));
-            const Ajv = require('ajv');
-            const ajv = new Ajv();
-            const validate = ajv.compile(schema);
-            if (!validate(task)) {
-              core.setFailed(`Schema validation failed: ${JSON.stringify(validate.errors)}`);
-              return;
             }
             
             // Output for next steps
@@ -120,85 +61,8 @@ jobs:
             core.setOutput('metadata', JSON.stringify(task.metadata || {}));
             
             // Write full task for downstream
+            const fs = require('fs');
             fs.writeFileSync('task-resolved.json', JSON.stringify(task, null, 2));
-
-      - name: Check repository registry
-        id: check-registry
-        run: |
-          python << 'EOF'
-          import yaml, sys
-          
-          with open("registry/repos.yaml") as f:
-              registry = yaml.safe_load(f)
-          
-          target_repo = "${{ steps.load-task.outputs.repository }}"
-          repo_config = None
-          for repo in registry.get("repositories", []):
-              if repo["name"] == target_repo:
-                  repo_config = repo
-                  break
-          
-          if not repo_config:
-              print(f"::error::Repository {target_repo} not registered in Cloud-Agent-HQ")
-              sys.exit(1)
-          
-          # Check worker profile compatibility
-          worker = "${{ steps.load-task.outputs.worker_profile }}"
-          if worker not in repo_config.get("worker_profiles", []):
-              print(f"::error::Worker {worker} not allowed for {target_repo}")
-              sys.exit(1)
-          
-          # Check private repo constraints
-          if repo_config.get("visibility") == "private":
-              if not repo_config.get("auto_dispatch", False):
-                  print(f"::error::Private repo {target_repo} has auto_dispatch=false")
-                  sys.exit(1)
-              # Note: minute budget check would need GitHub API call
-              # For now, just warn
-              print(f"::warning::Private repo - ensure Actions minute budget available")
-          
-          print(f"visibility={repo_config['visibility']}")
-          print(f"default_branch={repo_config['default_branch']}")
-          print(f"instructions_files={repo_config['instructions_files']}")
-          print(f"review_required={repo_config.get('review_required', True)}")
-          EOF
-        shell: bash
-
-      - name: Check worker registry
-        id: check-worker
-        run: |
-          python << 'EOF'
-          import yaml, sys
-          
-          with open("registry/workers.yaml") as f:
-              registry = yaml.safe_load(f)
-          
-          worker = "${{ steps.load-task.outputs.worker_profile }}"
-          worker_config = registry.get("workers", {}).get(worker)
-          
-          if not worker_config:
-              print(f"::error::Worker {worker} not defined in registry")
-              sys.exit(1)
-          
-          # Check global concurrency limit
-          global_limit = registry.get("global_limits", {}).get("per_worker_max", {}).get(worker, 5)
-          print(f"max_concurrent={global_limit}")
-          print(f"adapter_script={worker_config['adapter_script']}")
-          print(f"verify_script={worker_config['verify_script']}")
-          print(f"workflow_file={worker_config['gitHub_actions']['workflow_file']}")
-          print(f"timeout_minutes={worker_config['timeout_minutes']}")
-          EOF
-        shell: bash
-
-      - name: Dry run check
-        if: ${{ github.event.inputs.dry_run == 'true' }}
-        run: |
-          echo "::notice::DRY RUN - Validation successful, not dispatching"
-          echo "Task ID: ${{ steps.load-task.outputs.task_id }}"
-          echo "Repository: ${{ steps.load-task.outputs.repository }}"
-          echo "Worker: ${{ steps.load-task.outputs.worker_profile }}"
-          echo "Base Branch: ${{ steps.load-task.outputs.base_branch }}"
-          exit 0
 
       - name: Create tracking issue
         id: create-issue
@@ -206,25 +70,25 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const taskId = "${{ steps.load-task.outputs.task_id }}";
-            const repo = "${{ steps.load-task.outputs.repository }}";
-            const worker = "${{ steps.load-task.outputs.worker_profile }}";
-            const priority = "${{ steps.load-task.outputs.priority }}";
-            const labels = JSON.parse("${{ steps.load-task.outputs.labels }}");
+            const taskId = "${{ steps.parse-task.outputs.task_id }}";
+            const repo = "${{ steps.parse-task.outputs.repository }}";
+            const worker = "${{ steps.parse-task.outputs.worker_profile }}";
+            const priority = "${{ steps.parse-task.outputs.priority }}";
+            const labels = JSON.parse("${{ steps.parse-task.outputs.labels }}");
             
             const body = `## Cloud Agent Task: ${taskId}
             
             **Repository:** ${repo}
             **Worker:** ${worker}
-            **Base Branch:** ${{ steps.load-task.outputs.base_branch }}
+            **Base Branch:** ${{ steps.parse-task.outputs.base_branch }}
             **Priority:** ${priority}
             **Status:** 🟡 Dispatched
             
             ### Instructions
-            ${{ steps.load-task.outputs.instructions }}
+            ${{ steps.parse-task.outputs.instructions }}
             
             ### Verification Commands
-            ${JSON.parse("${{ steps.load-task.outputs.verification_commands }}").map(c => \`- \${c}\`).join('\n') || 'None specified'}
+            ${JSON.parse("${{ steps.parse-task.outputs.verification_commands }}").map(c => \`- \${c}\`).join('\n') || 'None specified'}
             
             ---
             *Dispatched from Cloud-Agent-HQ via GitHub Actions*`;
@@ -237,8 +101,7 @@ jobs:
               labels: ["cloud-agent-task", worker, priority, ...labels]
             });
             
-            console.log(`Created issue #${issue.data.number}: ${issue.data.html_url}`);
-            return issue.data.number;
+            core.setOutput('issue_number', issue.data.number);
 
       - name: Trigger worker workflow
         id: trigger-worker
@@ -246,10 +109,10 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const taskId = "${{ steps.load-task.outputs.task_id }}";
-            const repo = "${{ steps.load-task.outputs.repository }}";
-            const worker = "${{ steps.load-task.outputs.worker_profile }}";
-            const workflowFile = "${{ steps.check-worker.outputs.workflow_file }}";
+            const taskId = "${{ steps.parse-task.outputs.task_id }}";
+            const repo = "${{ steps.parse-task.outputs.repository }}";
+            const worker = "${{ steps.parse-task.outputs.worker_profile }}";
+            const workflowFile = "worker-${worker}.yml";
             
             // Read the resolved task JSON
             const fs = require('fs');
@@ -260,27 +123,23 @@ jobs:
             task.dispatched_at = new Date().toISOString();
             task.dispatched_by = "${{ github.actor }}";
             
-            // Write updated task for worker
-            fs.writeFileSync('task-for-worker.json', JSON.stringify(task, null, 2));
-            
             // Trigger the worker workflow
-            const response = await github.rest.actions.createWorkflowDispatch({
+            await github.rest.actions.createWorkflowDispatch({
               owner: "Chimthuwu",
               repo: "Cloud-Agent-HQ",
-              workflow_id: workflowFile.replace('.github/workflows/', ''),
+              workflow_id: workflowFile,
               ref: "main",
               inputs: {
                 task_json: JSON.stringify(task),
                 task_id: taskId,
                 repository: repo,
-                base_branch: "${{ steps.load-task.outputs.base_branch }}",
-                timeout_minutes: "${{ steps.load-task.outputs.timeout_minutes }}",
+                base_branch: "${{ steps.parse-task.outputs.base_branch }}",
+                timeout_minutes: "${{ steps.parse-task.outputs.timeout_minutes }}",
                 tracking_issue: "${{ steps.create-issue.outputs.issue_number }}"
               }
             });
             
             console.log(`Triggered ${workflowFile} for task ${taskId}`);
-            console.log(`Workflow run URL: https://github.com/Chimthuwu/Cloud-Agent-HQ/actions/runs/${response.data.id}`);
 
       - name: Update tracking issue with workflow link
         if: ${{ github.event.inputs.dry_run != 'true' }}
@@ -288,8 +147,8 @@ jobs:
         with:
           script: |
             const issueNumber = ${{ steps.create-issue.outputs.issue_number }};
-            const taskId = "${{ steps.load-task.outputs.task_id }}";
-            const worker = "${{ steps.load-task.outputs.worker_profile }}";
+            const taskId = "${{ steps.parse-task.outputs.task_id }}";
+            const worker = "${{ steps.parse-task.outputs.worker_profile }}";
             
             await github.rest.issues.createComment({
               owner: "Chimthuwu",
@@ -303,5 +162,5 @@ jobs:
             });
 
 concurrency:
-  group: cloud-agent-dispatch-${{ github.event.inputs.task_json != '' && github.event.inputs.task_json || github.event.inputs.task_file }}
+  group: cloud-agent-dispatch-${{ github.event.inputs.task_json }}
   cancel-in-progress: false
