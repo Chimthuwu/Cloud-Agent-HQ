@@ -96,7 +96,7 @@ jobs:
             await github.rest.actions.createWorkflowDispatch({
               owner: "Chimthuwu",
               repo: "Cloud-Agent-HQ",
-              workflow_id: workflowFile,
+              workflow_id: "worker-opencode.yml",
               ref: "main",
               inputs: {
                 task_json: JSON.stringify(task),
