@@ -85,11 +85,12 @@ OPENCODE_ERROR="/tmp/opencode-error-$TASK_ID.log"
 PERMS_ARG=$(echo "$TOOL_PERMISSIONS" | jq -r 'join(",")')
 
 set +e
-# Try using --command flag (mentioned in help: "the command to run, use message for args")
-opencode run \
+# Use opencode directly with global --prompt flag (not run subcommand)
+opencode \
+    --prompt "$(cat "$INSTRUCTIONS_FILE")" \
     --model "$OPENCODE_MODEL" \
     --permission "$PERMS_ARG" \
-    --command "$(cat "$INSTRUCTIONS_FILE")" \
+    --auto \
     2>"$OPENCODE_ERROR" | tee "$OPENCODE_OUTPUT"
 OPENCODE_EXIT=${PIPESTATUS[0]}
 set -e
