@@ -1,0 +1,30 @@
+name: Worker - Env Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_json:
+        description: "Full task contract JSON"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+jobs:
+  execute:
+    name: Env Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+      OPENCODE_MODEL: ${{ secrets.OPENCODE_MODEL }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Print env
+        run: |
+          echo "OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:0:10}..."
+          echo "OPENCODE_MODEL: $OPENCODE_MODEL"
+          echo "GITHUB_TOKEN: ${GITHUB_TOKEN:0:10}..."
