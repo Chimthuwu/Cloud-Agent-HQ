@@ -1,0 +1,166 @@
+name: Dispatch Task v2
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_json:
+        description: "Task contract JSON"
+        required: true
+        type: string
+      dry_run:
+        description: "Validate only, don't dispatch"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  validate-and-dispatch:
+    name: Validate & Dispatch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Cloud-Agent-HQ
+        uses: actions/checkout@v4
+
+      - name: Parse task JSON
+        id: parse-task
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const taskJson = `${{ github.event.inputs.task_json }}`;
+            console.log('Task JSON received');
+            const task = JSON.parse(taskJson);
+            
+            // Validate required fields
+            const required = ["task_id", "repository", "base_branch", "instructions", "worker_profile"];
+            for (const field of required) {
+              if (!(field in task)) {
+                core.setFailed(`Missing required field: ${field}`);
+                return;
+              }
+            }
+            
+            // Output for next steps
+            core.setOutput('task_id', task.task_id);
+            core.setOutput('repository', task.repository);
+            core.setOutput('worker_profile', task.worker_profile);
+            core.setOutput('base_branch', task.base_branch);
+            core.setOutput('instructions', task.instructions);
+            core.setOutput('timeout_minutes', task.timeout_minutes || 30);
+            core.setOutput('reviewer_profile', task.reviewer_profile || 'different');
+            core.setOutput('verification_commands', JSON.stringify(task.verification_commands || []));
+            core.setOutput('environment_vars', JSON.stringify(task.environment_vars || {}));
+            core.setOutput('tool_permissions', JSON.stringify(task.tool_permissions || []));
+            core.setOutput('priority', task.priority || 'normal');
+            core.setOutput('labels', JSON.stringify(task.labels || []));
+            core.setOutput('metadata', JSON.stringify(task.metadata || {}));
+            
+            // Write full task for downstream
+            const fs = require('fs');
+            fs.writeFileSync('task-resolved.json', JSON.stringify(task, null, 2));
+
+      - name: Create tracking issue
+        id: create-issue
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const taskId = "${{ steps.parse-task.outputs.task_id }}";
+            const repo = "${{ steps.parse-task.outputs.repository }}";
+            const worker = "${{ steps.parse-task.outputs.worker_profile }}";
+            const priority = "${{ steps.parse-task.outputs.priority }}";
+            const labels = JSON.parse("${{ steps.parse-task.outputs.labels }}");
+            
+            const body = `## Cloud Agent Task: ${taskId}
+            
+            **Repository:** ${repo}
+            **Worker:** ${worker}
+            **Base Branch:** ${{ steps.parse-task.outputs.base_branch }}
+            **Priority:** ${priority}
+            **Status:** 🟡 Dispatched
+            
+            ### Instructions
+            ${{ steps.parse-task.outputs.instructions }}
+            
+            ### Verification Commands
+            ${JSON.parse("${{ steps.parse-task.outputs.verification_commands }}").map(c => \`- \${c}\`).join('\n') || 'None specified'}
+            
+            ---
+            *Dispatched from Cloud-Agent-HQ via GitHub Actions*`;
+            
+            const issue = await github.rest.issues.create({
+              owner: "Chimthuwu",
+              repo: "Cloud-Agent-HQ",
+              title: `[TASK] ${taskId}`,
+              body: body,
+              labels: ["cloud-agent-task", worker, priority, ...labels]
+            });
+            
+            core.setOutput('issue_number', issue.data.number);
+
+      - name: Trigger worker workflow
+        id: trigger-worker
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const taskId = "${{ steps.parse-task.outputs.task_id }}";
+            const repo = "${{ steps.parse-task.outputs.repository }}";
+            const worker = "${{ steps.parse-task.outputs.worker_profile }}";
+            const workflowFile = "worker-${worker}.yml";
+            
+            // Read the resolved task JSON
+            const fs = require('fs');
+            const task = JSON.parse(fs.readFileSync('task-resolved.json', 'utf8'));
+            
+            // Add tracking info
+            task.tracking_issue = ${{ steps.create-issue.outputs.issue_number }};
+            task.dispatched_at = new Date().toISOString();
+            task.dispatched_by = "${{ github.actor }}";
+            
+            // Trigger the worker workflow
+            await github.rest.actions.createWorkflowDispatch({
+              owner: "Chimthuwu",
+              repo: "Cloud-Agent-HQ",
+              workflow_id: workflowFile,
+              ref: "main",
+              inputs: {
+                task_json: JSON.stringify(task),
+                task_id: taskId,
+                repository: repo,
+                base_branch: "${{ steps.parse-task.outputs.base_branch }}",
+                timeout_minutes: "${{ steps.parse-task.outputs.timeout_minutes }}",
+                tracking_issue: "${{ steps.create-issue.outputs.issue_number }}"
+              }
+            });
+            
+            console.log(`Triggered ${workflowFile} for task ${taskId}`);
+
+      - name: Update tracking issue with workflow link
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issueNumber = ${{ steps.create-issue.outputs.issue_number }};
+            const taskId = "${{ steps.parse-task.outputs.task_id }}";
+            const worker = "${{ steps.parse-task.outputs.worker_profile }}";
+            
+            await github.rest.issues.createComment({
+              owner: "Chimthuwu",
+              repo: "Cloud-Agent-HQ",
+              issue_number: issueNumber,
+              body: `✅ **Task dispatched to ${worker} worker**
+            
+            Track progress at: https://github.com/Chimthuwu/Cloud-Agent-HQ/actions
+            
+            Task ID: \`${taskId}\``
+            });
+
+concurrency:
+  group: cloud-agent-dispatch-${{ github.event.inputs.task_json }}
+  cancel-in-progress: false
