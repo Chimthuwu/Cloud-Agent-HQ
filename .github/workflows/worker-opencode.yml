@@ -49,8 +49,6 @@ jobs:
       OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
       OPENCODE_MODEL: ${{ secrets.OPENCODE_MODEL || 'sonnet-4' }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # Target repo PAT for push/PR creation
-      TARGET_REPO_PAT: ${{ secrets.CLOUD_AGENT_HQ_PAT }}
     steps:
       - name: Checkout Cloud-Agent-HQ (for adapter scripts)
         uses: actions/checkout@v4
