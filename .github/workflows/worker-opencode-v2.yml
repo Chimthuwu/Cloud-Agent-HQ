@@ -39,7 +39,7 @@ jobs:
   execute:
     name: Execute OpenCode Task
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ github.event.inputs.timeout_minutes }}
+    timeout-minutes: 30
     env:
       TASK_ID: ${{ github.event.inputs.task_id }}
       REPOSITORY: ${{ github.event.inputs.repository }}
