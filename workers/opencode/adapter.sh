@@ -179,14 +179,21 @@ if [[ -f "TODO.md" ]]; then
     FULL_INSTRUCTIONS+="\n\n--- REPOSITORY TODO.md ---\n$(cat TODO.md)"
 fi
 
+# Write instructions to a file to avoid command-line argument issues
+INSTRUCTIONS_FILE="/tmp/opencode-instructions-$TASK_ID.txt"
+echo -e "$FULL_INSTRUCTIONS" > "$INSTRUCTIONS_FILE"
+
 echo "=== Starting OpenCode task: $TASK_ID ==="
 echo "Repository: $REPOSITORY"
 echo "Branch: $BASE_BRANCH"
 echo "Workspace: $WORK_DIR"
+echo "Instructions file: $INSTRUCTIONS_FILE"
 
 # Build OpenCode command
-# OpenCode CLI usage: opencode run <message> [options]
-# We'll pass the full instructions as the message argument
+# OpenCode CLI usage: opencode run [flags] [<message...>]
+# We'll pass the instructions file as the message by reading it
+# Since message is variadic, we need to pass it as a single argument
+# Use cat to read the file and pass as argument
 
 OPENCODE_OUTPUT="/tmp/opencode-output-$TASK_ID.log"
 OPENCODE_ERROR="/tmp/opencode-error-$TASK_ID.log"
@@ -195,10 +202,12 @@ OPENCODE_ERROR="/tmp/opencode-error-$TASK_ID.log"
 PERMS_ARG=$(echo "$TOOL_PERMISSIONS" | jq -r 'join(",")')
 
 set +e
+# Read instructions file content and pass as single argument
+INSTRUCTIONS_CONTENT=$(cat "$INSTRUCTIONS_FILE")
 opencode run \
     --model "$OPENCODE_MODEL" \
     --permission "$PERMS_ARG" \
-    "$FULL_INSTRUCTIONS" \
+    "$INSTRUCTIONS_CONTENT" \
     2>"$OPENCODE_ERROR" | tee "$OPENCODE_OUTPUT"
 OPENCODE_EXIT=${PIPESTATUS[0]}
 set -e
