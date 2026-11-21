@@ -1,0 +1,60 @@
+name: Worker - Env Test v2
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_json:
+        description: "Full task contract JSON"
+        required: true
+        type: string
+      task_id:
+        description: "Task ID"
+        required: true
+        type: string
+      repository:
+        description: "Target repository (owner/name)"
+        required: true
+        type: string
+      base_branch:
+        description: "Base branch"
+        required: true
+        type: string
+        default: "main"
+      timeout_minutes:
+        description: "Timeout in minutes"
+        required: true
+        type: number
+        default: 30
+      tracking_issue:
+        description: "Tracking issue number in Cloud-Agent-HQ"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+  actions: write
+
+jobs:
+  execute:
+    name: Env Test v2
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TASK_ID: ${{ github.event.inputs.task_id }}
+      REPOSITORY: ${{ github.event.inputs.repository }}
+      BASE_BRANCH: ${{ github.event.inputs.base_branch }}
+      TRACKING_ISSUE: ${{ github.event.inputs.tracking_issue }}
+      OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
+      OPENCODE_MODEL: ${{ secrets.OPENCODE_MODEL }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Print env
+        run: |
+          echo "TASK_ID: $TASK_ID"
+          echo "REPOSITORY: $REPOSITORY"
+          echo "BASE_BRANCH: $BASE_BRANCH"
+          echo "TRACKING_ISSUE: $TRACKING_ISSUE"
+          echo "OPENCODE_GO_API_KEY: ${OPENCODE_GO_API_KEY:0:10}..."
+          echo "OPENCODE_MODEL: $OPENCODE_MODEL"
+          echo "GITHUB_TOKEN: ${GITHUB_TOKEN:0:10}..."
