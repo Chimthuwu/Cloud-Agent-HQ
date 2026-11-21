@@ -167,11 +167,7 @@ class CloudAgentHQ:
             f"/repos/{self.hq_repo}/actions/workflows/dispatch-task.yml/dispatches",
             "-f", f"ref=main",
             "-f", f"inputs[task_json]={task_json}",
-            "-f", f"inputs[task_id]={task['task_id']}",
-            "-f", f"inputs[repository]={task['repository']}",
-            "-f", f"inputs[worker_profile]={task['worker_profile']}",
-            "-f", f"inputs[base_branch]={task['base_branch']}",
-            "-f", f"inputs[timeout_minutes]={task.get('timeout_minutes', 30)}"
+            "-f", f"inputs[dry_run]=false"
         ]
         
         result = self._run_gh(cmd)
