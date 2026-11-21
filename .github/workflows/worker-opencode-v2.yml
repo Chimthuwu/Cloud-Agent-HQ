@@ -46,7 +46,7 @@ jobs:
       BASE_BRANCH: ${{ github.event.inputs.base_branch }}
       TRACKING_ISSUE: ${{ github.event.inputs.tracking_issue }}
       OPENCODE_GO_API_KEY: ${{ secrets.OPENCODE_GO_API_KEY }}
-      OPENCODE_MODEL: ${{ secrets.OPENCODE_MODEL || 'sonnet-4' }}
+      OPENCODE_MODEL: ${{ secrets.OPENCODE_MODEL }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout Cloud-Agent-HQ (for adapter scripts)
