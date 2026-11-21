@@ -73,6 +73,7 @@ FULL_INSTRUCTIONS="$INSTRUCTIONS"
 [[ -f "README.md" ]] && FULL_INSTRUCTIONS+="\n\n--- REPOSITORY README.md ---\n$(cat README.md)"
 [[ -f "TODO.md" ]] && FULL_INSTRUCTIONS+="\n\n--- REPOSITORY TODO.md ---\n$(cat TODO.md)"
 
+# Write instructions to a file and use --prompt flag (global flag)
 INSTRUCTIONS_FILE="/tmp/opencode-instructions-$TASK_ID.txt"
 echo -e "$FULL_INSTRUCTIONS" > "$INSTRUCTIONS_FILE"
 
@@ -80,26 +81,19 @@ echo "=== Starting OpenCode task: $TASK_ID ==="
 echo "Repository: $REPOSITORY"
 echo "Branch: $BASE_BRANCH"
 echo "Workspace: $WORK_DIR"
-echo "Instructions file: $INSTRUCTIONS_FILE"
-echo "Instructions length: ${#FULL_INSTRUCTIONS} chars"
+echo "Instructions file: $INSTRUCTIONS_FILE (${#FULL_INSTRUCTIONS} chars)"
 
 OPENCODE_OUTPUT="/tmp/opencode-output-$TASK_ID.log"
 OPENCODE_ERROR="/tmp/opencode-error-$TASK_ID.log"
 PERMS_ARG=$(echo "$TOOL_PERMISSIONS" | jq -r 'join(",")')
 
-# DEBUG: Print the exact command
-INSTRUCTIONS_CONTENT=$(cat "$INSTRUCTIONS_FILE")
-echo "DEBUG: OPENCODE_MODEL=$OPENCODE_MODEL"
-echo "DEBUG: PERMS_ARG=$PERMS_ARG"
-echo "DEBUG: INSTRUCTIONS_CONTENT length=${#INSTRUCTIONS_CONTENT}"
-echo "DEBUG: INSTRUCTIONS_CONTENT first 100 chars: ${INSTRUCTIONS_CONTENT:0:100}"
-
 set +e
-# Try with explicit argument passing
-opencode run \
+# Use --prompt global flag to pass the message, avoiding command-line argument issues
+opencode \
+    --prompt "$(cat "$INSTRUCTIONS_FILE")" \
+    run \
     --model "$OPENCODE_MODEL" \
     --permission "$PERMS_ARG" \
-    "$INSTRUCTIONS_CONTENT" \
     2>"$OPENCODE_ERROR" | tee "$OPENCODE_OUTPUT"
 OPENCODE_EXIT=${PIPESTATUS[0]}
 set -e
@@ -110,8 +104,9 @@ if [[ -f "$OPENCODE_ERROR" ]]; then
     cat "$OPENCODE_ERROR"
 fi
 if [[ -f "$OPENCODE_OUTPUT" ]]; then
-    echo "DEBUG: stdout output:"
-    cat "$OPENCODE_OUTPUT"
+    echo "DEBUG: stdout output (first 500 chars):"
+    head -c 500 "$OPENCODE_OUTPUT"
+    echo "..."
 fi
 
 if [[ $OPENCODE_EXIT -ne 0 ]]; then
