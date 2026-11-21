@@ -160,7 +160,3 @@ jobs:
             
             Task ID: \`${taskId}\``
             });
-
-concurrency:
-  group: cloud-agent-dispatch-${{ github.event.inputs.task_json }}
-  cancel-in-progress: false
