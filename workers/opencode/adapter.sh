@@ -179,31 +179,26 @@ if [[ -f "TODO.md" ]]; then
     FULL_INSTRUCTIONS+="\n\n--- REPOSITORY TODO.md ---\n$(cat TODO.md)"
 fi
 
-# Write instructions to a file for OpenCode
-INSTRUCTIONS_FILE="/tmp/opencode-instructions-$TASK_ID.md"
-echo -e "$FULL_INSTRUCTIONS" > "$INSTRUCTIONS_FILE"
-
 echo "=== Starting OpenCode task: $TASK_ID ==="
 echo "Repository: $REPOSITORY"
 echo "Branch: $BASE_BRANCH"
 echo "Workspace: $WORK_DIR"
 
-# Run OpenCode
-# OpenCode CLI usage: opencode run <instructions> [options]
-# We'll use the non-interactive mode with instructions from file
+# Build OpenCode command
+# OpenCode CLI usage: opencode run <message> [options]
+# We'll pass the full instructions as the message argument
 
 OPENCODE_OUTPUT="/tmp/opencode-output-$TASK_ID.log"
 OPENCODE_ERROR="/tmp/opencode-error-$TASK_ID.log"
 
 # Build OpenCode command
-# OpenCode supports: opencode run --model <model> --instructions <file> --permission <perms>
 PERMS_ARG=$(echo "$TOOL_PERMISSIONS" | jq -r 'join(",")')
 
 set +e
 opencode run \
     --model "$OPENCODE_MODEL" \
-    --instructions "$INSTRUCTIONS_FILE" \
     --permission "$PERMS_ARG" \
+    "$FULL_INSTRUCTIONS" \
     2>"$OPENCODE_ERROR" | tee "$OPENCODE_OUTPUT"
 OPENCODE_EXIT=${PIPESTATUS[0]}
 set -e
