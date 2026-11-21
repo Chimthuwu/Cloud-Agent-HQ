@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Cloud Agent HQ — OpenCode Worker Adapter
 # Entry point for OpenCode worker execution in GitHub Actions
-#
-# Usage: ./adapter.sh <task-json-file> <workspace-dir> <output-report-file>
 
 set -euo pipefail
 
@@ -73,7 +71,6 @@ FULL_INSTRUCTIONS="$INSTRUCTIONS"
 [[ -f "README.md" ]] && FULL_INSTRUCTIONS+="\n\n--- REPOSITORY README.md ---\n$(cat README.md)"
 [[ -f "TODO.md" ]] && FULL_INSTRUCTIONS+="\n\n--- REPOSITORY TODO.md ---\n$(cat TODO.md)"
 
-# Write instructions to a file and use --prompt flag (global flag)
 INSTRUCTIONS_FILE="/tmp/opencode-instructions-$TASK_ID.txt"
 echo -e "$FULL_INSTRUCTIONS" > "$INSTRUCTIONS_FILE"
 
@@ -81,19 +78,18 @@ echo "=== Starting OpenCode task: $TASK_ID ==="
 echo "Repository: $REPOSITORY"
 echo "Branch: $BASE_BRANCH"
 echo "Workspace: $WORK_DIR"
-echo "Instructions file: $INSTRUCTIONS_FILE (${#FULL_INSTRUCTIONS} chars)"
+echo "Instructions: ${#FULL_INSTRUCTIONS} chars"
 
 OPENCODE_OUTPUT="/tmp/opencode-output-$TASK_ID.log"
 OPENCODE_ERROR="/tmp/opencode-error-$TASK_ID.log"
 PERMS_ARG=$(echo "$TOOL_PERMISSIONS" | jq -r 'join(",")')
 
 set +e
-# Use --prompt global flag to pass the message, avoiding command-line argument issues
-opencode \
-    --prompt "$(cat "$INSTRUCTIONS_FILE")" \
-    run \
+# Try using --command flag (mentioned in help: "the command to run, use message for args")
+opencode run \
     --model "$OPENCODE_MODEL" \
     --permission "$PERMS_ARG" \
+    --command "$(cat "$INSTRUCTIONS_FILE")" \
     2>"$OPENCODE_ERROR" | tee "$OPENCODE_OUTPUT"
 OPENCODE_EXIT=${PIPESTATUS[0]}
 set -e
