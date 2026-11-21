@@ -78,17 +78,19 @@ echo "=== Starting OpenCode task: $TASK_ID ==="
 echo "Repository: $REPOSITORY"
 echo "Branch: $BASE_BRANCH"
 echo "Workspace: $WORK_DIR"
-echo "Instructions: ${#FULL_INSTRUCTIONS} chars"
+echo "Instructions file: $INSTRUCTIONS_FILE (${#FULL_INSTRUCTIONS} chars)"
 
 OPENCODE_OUTPUT="/tmp/opencode-output-$TASK_ID.log"
 OPENCODE_ERROR="/tmp/opencode-error-$TASK_ID.log"
 PERMS_ARG=$(echo "$TOOL_PERMISSIONS" | jq -r 'join(",")')
 
 set +e
-# Try piping message via stdin to opencode run
-cat "$INSTRUCTIONS_FILE" | opencode run \
+# Use --file flag to attach instructions file, with a short message
+opencode run \
     --model "$OPENCODE_MODEL" \
     --permission "$PERMS_ARG" \
+    --file "$INSTRUCTIONS_FILE" \
+    "Follow the instructions in the attached file to complete the task." \
     2>"$OPENCODE_ERROR" | tee "$OPENCODE_OUTPUT"
 OPENCODE_EXIT=${PIPESTATUS[0]}
 set -e
