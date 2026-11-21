@@ -1,0 +1,70 @@
+name: Dispatch With Issue
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_json:
+        description: "Task contract JSON"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Cloud-Agent-HQ
+        uses: actions/checkout@v4
+      - name: Parse JSON
+        id: parse-task
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const taskJson = `${{ github.event.inputs.task_json }}`;
+            console.log('Task JSON received');
+            const task = JSON.parse(taskJson);
+            console.log('Task ID:', task.task_id);
+            core.setOutput('task_id', task.task_id);
+            core.setOutput('repository', task.repository);
+            core.setOutput('worker_profile', task.worker_profile);
+            core.setOutput('base_branch', task.base_branch);
+            core.setOutput('instructions', task.instructions);
+            core.setOutput('priority', task.priority || 'normal');
+            core.setOutput('labels', JSON.stringify(task.labels || []));
+      - name: Create tracking issue
+        id: create-issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const taskId = "${{ steps.parse-task.outputs.task_id }}";
+            const repo = "${{ steps.parse-task.outputs.repository }}";
+            const worker = "${{ steps.parse-task.outputs.worker_profile }}";
+            const priority = "${{ steps.parse-task.outputs.priority }}";
+            const labels = JSON.parse("${{ steps.parse-task.outputs.labels }}");
+            
+            const body = `## Cloud Agent Task: ${taskId}
+            
+            **Repository:** ${repo}
+            **Worker:** ${worker}
+            **Base Branch:** ${{ steps.parse-task.outputs.base_branch }}
+            **Priority:** ${priority}
+            **Status:** 🟡 Dispatched
+            
+            ### Instructions
+            ${{ steps.parse-task.outputs.instructions }}
+            
+            ---
+            *Dispatched from Cloud-Agent-HQ via GitHub Actions*`;
+            
+            const issue = await github.rest.issues.create({
+              owner: "Chimthuwu",
+              repo: "Cloud-Agent-HQ",
+              title: `[TASK] ${taskId}`,
+              body: body,
+              labels: ["cloud-agent-task", worker, priority, ...labels]
+            });
+            
+            core.setOutput('issue_number', issue.data.number);
