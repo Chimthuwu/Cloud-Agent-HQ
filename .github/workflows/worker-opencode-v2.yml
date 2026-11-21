@@ -109,7 +109,6 @@ jobs:
         id: opencode
         working-directory: target-repo
         env:
-          TASK_INSTRUCTIONS: ${{ github.event.inputs.task_json }}
           REPO_INSTRUCTIONS: ${{ steps.read-instructions.outputs.instructions }}
           TASK_ID: ${{ github.event.inputs.task_id }}
           BRANCH_NAME: ${{ env.BRANCH_NAME }}
