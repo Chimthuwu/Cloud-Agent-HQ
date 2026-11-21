@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Cloud Agent HQ — OpenCode Worker Adapter (REST API mode)
-# Entry point for OpenCode worker execution in GitHub Actions
+# Cloud Agent HQ — OpenCode Worker Adapter (minimal test)
 
 set -euo pipefail
 
@@ -65,146 +64,106 @@ export OPENCODE_GO_API_KEY="${OPENCODE_GO_API_KEY:-}"
 export OPENCODE_MODEL="${OPENCODE_MODEL:-sonnet-4}"
 echo "$ENV_VARS" | jq -r 'to_entries[] | "export \(.key)=\(.value)"' | while read -r line; do eval "$line"; done
 
-FULL_INSTRUCTIONS="$INSTRUCTIONS"
-[[ -f "AGENTS.md" ]] && FULL_INSTRUCTIONS+="\n\n--- REPOSITORY AGENTS.md ---\n$(cat AGENTS.md)"
-[[ -f "CLAUDE.md" ]] && FULL_INSTRUCTIONS+="\n\n--- REPOSITORY CLAUDE.md ---\n$(cat CLAUDE.md)"
-[[ -f "README.md" ]] && FULL_INSTRUCTIONS+="\n\n--- REPOSITORY README.md ---\n$(cat README.md)"
-[[ -f "TODO.md" ]] && FULL_INSTRUCTIONS+="\n\n--- REPOSITORY TODO.md ---\n$(cat TODO.md)"
-
 echo "=== Starting OpenCode task: $TASK_ID ==="
 echo "Repository: $REPOSITORY"
 echo "Branch: $BASE_BRANCH"
 echo "Workspace: $WORK_DIR"
-echo "Instructions: ${#FULL_INSTRUCTIONS} chars"
 
 OPENCODE_OUTPUT="/tmp/opencode-output-$TASK_ID.log"
 OPENCODE_ERROR="/tmp/opencode-error-$TASK_ID.log"
-PERMS_ARG=$(echo "$TOOL_PERMISSIONS" | jq -r 'join(",")')
 
-# Start OpenCode server in background
-SERVER_PORT=4096
-SERVER_URL="http://localhost:$SERVER_PORT"
-echo "Starting OpenCode server on $SERVER_URL..."
-opencode serve --port $SERVER_PORT >"$OPENCODE_OUTPUT" 2>"$OPENCODE_ERROR" &
-SERVER_PID=$!
-
-# Wait for server to start
-sleep 5
-
-# Check if server is running
-if ! curl -s "$SERVER_URL/health" >/dev/null 2>&1; then
-    echo "Server not responding on /health, trying /api..."
-    sleep 5
-fi
-
-# Try to create a session and send message via API
-# First, let's see what API endpoints are available
-echo "Checking API endpoints..."
-curl -s "$SERVER_URL/api" 2>&1 | head -c 500
-echo ""
-
-# Try to send a message using the API
-# Based on OpenCode API patterns, we might need to:
-# 1. Create a session
-# 2. Send a message to the session
-
-# For now, let's try the CLI with --attach flag
 set +e
-opencode run \
-    --attach "$SERVER_URL" \
-    --model "$OPENCODE_MODEL" \
-    --permission "$PERMS_ARG" \
-    "$FULL_INSTRUCTIONS" \
-    2>>"$OPENCODE_ERROR" | tee -a "$OPENCODE_OUTPUT"
-OPENCODE_EXIT=${PIPESTATUS[0]}
+# Test 1: Simplest possible command - no flags, just message
+echo "TEST 1: opencode run \"hello\""
+opencode run "hello" 2>"$OPENCODE_ERROR" | tee "$OPENCODE_OUTPUT"
+EXIT1=${PIPESTATUS[0]}
+echo "Exit code: $EXIT1"
+cat "$OPENCODE_ERROR"
+echo "---"
+
+# Test 2: With model flag
+echo "TEST 2: opencode run --model sonnet-4 \"hello\""
+opencode run --model sonnet-4 "hello" 2>"$OPENCODE_ERROR" | tee "$OPENCODE_OUTPUT"
+EXIT2=${PIPESTATUS[0]}
+echo "Exit code: $EXIT2"
+cat "$OPENCODE_ERROR"
+echo "---"
+
+# Test 3: With permission flag
+echo "TEST 3: opencode run --model sonnet-4 --permission read,write \"hello\""
+opencode run --model sonnet-4 --permission read,write "hello" 2>"$OPENCODE_ERROR" | tee "$OPENCODE_OUTPUT"
+EXIT3=${PIPESTATUS[0]}
+echo "Exit code: $EXIT3"
+cat "$OPENCODE_ERROR"
+echo "---"
+
+# Test 4: Message first, then flags
+echo "TEST 4: opencode run \"hello\" --model sonnet-4 --permission read,write"
+opencode run "hello" --model sonnet-4 --permission read,write 2>"$OPENCODE_ERROR" | tee "$OPENCODE_OUTPUT"
+EXIT4=${PIPESTATUS[0]}
+echo "Exit code: $EXIT4"
+cat "$OPENCODE_ERROR"
+echo "---"
+
+# Test 5: opencode (no subcommand) with --prompt
+echo "TEST 5: opencode --prompt \"hello\" --model sonnet-4 --permission read,write"
+opencode --prompt "hello" --model sonnet-4 --permission read,write 2>"$OPENCODE_ERROR" | tee "$OPENCODE_OUTPUT"
+EXIT5=${PIPESTATUS[0]}
+echo "Exit code: $EXIT5"
+cat "$OPENCODE_ERROR"
+echo "---"
+
+# Test 6: opencode run with --format json
+echo "TEST 6: opencode run --format json --model sonnet-4 --permission read,write \"hello\""
+opencode run --format json --model sonnet-4 --permission read,write "hello" 2>"$OPENCODE_ERROR" | tee "$OPENCODE_OUTPUT"
+EXIT6=${PIPESTATUS[0]}
+echo "Exit code: $EXIT6"
+cat "$OPENCODE_ERROR"
+echo "---"
+
 set -e
 
-# Kill the server
-kill $SERVER_PID 2>/dev/null || true
-wait $SERVER_PID 2>/dev/null || true
-
-echo "DEBUG: OpenCode exit code: $OPENCODE_EXIT"
-if [[ -f "$OPENCODE_ERROR" ]]; then
-    echo "DEBUG: stderr output:"
-    cat "$OPENCODE_ERROR"
-fi
-if [[ -f "$OPENCODE_OUTPUT" ]]; then
-    echo "DEBUG: stdout output (first 500 chars):"
-    head -c 500 "$OPENCODE_OUTPUT"
-    echo "..."
-fi
-
-if [[ $OPENCODE_EXIT -ne 0 ]]; then
-    ERROR_OUTPUT=$(cat "$OPENCODE_ERROR" 2>/dev/null || echo "No stderr")
-    report_append_array "errors" "OpenCode execution failed: $ERROR_OUTPUT"
-fi
-
-CHANGES=$(git status --porcelain | awk '{print $2}' | jq -R . | jq -s .)
-CHANGES_ARRAY=$(echo "$CHANGES" | jq -c '.')
-
-VERIFICATION_PASSED=()
-VERIFICATION_FAILED=()
-VERIFICATION_OUTPUT=""
-
-for cmd in $(echo "$VERIFICATION_CMDS" | jq -r '.[]'); do
-    echo "Running verification: $cmd"
-    report_append_array "verification_results.commands_run" "$cmd"
-    if eval "$cmd" >>"$OPENCODE_OUTPUT" 2>&1; then
-        VERIFICATION_PASSED+=("$cmd")
-        report_append_array "verification_results.passed" "$cmd"
-        VERIFICATION_OUTPUT+="\n✅ $cmd"
-    else
-        VERIFICATION_FAILED+=("$cmd")
-        report_append_array "verification_results.failed" "$cmd"
-        VERIFICATION_OUTPUT+="\n❌ $cmd"
-    fi
-done
-
-report_update_string "verification_results.output" "$VERIFICATION_OUTPUT"
-
-if [[ $OPENCODE_EXIT -ne 0 ]]; then
+# Use the first successful test
+if [[ $EXIT1 -eq 0 ]]; then
+    echo "Using TEST 1 method"
+    METHOD=1
+elif [[ $EXIT2 -eq 0 ]]; then
+    echo "Using TEST 2 method"
+    METHOD=2
+elif [[ $EXIT3 -eq 0 ]]; then
+    echo "Using TEST 3 method"
+    METHOD=3
+elif [[ $EXIT4 -eq 0 ]]; then
+    echo "Using TEST 4 method"
+    METHOD=4
+elif [[ $EXIT5 -eq 0 ]]; then
+    echo "Using TEST 5 method"
+    METHOD=5
+elif [[ $EXIT6 -eq 0 ]]; then
+    echo "Using TEST 6 method"
+    METHOD=6
+else
+    echo "All tests failed!"
+    report_append_array "errors" "All OpenCode test methods failed"
     FINAL_STATUS="failed"
-    SUMMARY="OpenCode execution failed with exit code $OPENCODE_EXIT"
-elif [[ ${#VERIFICATION_FAILED[@]} -gt 0 ]]; then
-    FINAL_STATUS="partial"
-    SUMMARY="OpenCode completed but ${#VERIFICATION_FAILED[@]} verification command(s) failed"
-else
-    FINAL_STATUS="success"
-    SUMMARY="Task completed successfully with all verifications passing"
+    SUMMARY="OpenCode CLI not working in this environment"
 fi
 
-PR_NUMBER=0; PR_URL=""; BRANCH_NAME=""
-if [[ "$CHANGES" != "[]" ]]; then
-    BRANCH_NAME=$(git branch --show-current)
-    git add -A
-    git commit -m "cloud-agent: $TASK_ID - $SUMMARY\n\nAutomated implementation by Cloud Agent HQ (OpenCode worker)\n\nTask: $TASK_ID\nRepository: $REPOSITORY\nWorker: opencode\nModel: $OPENCODE_MODEL\n\nChanges:\n$(git diff --name-only HEAD~1 | sed 's/^/- /')\n\nVerification: ${#VERIFICATION_PASSED[@]} passed, ${#VERIFICATION_FAILED[@]} failed"
-    git push origin "$BRANCH_NAME" 2>&1 | tee -a "$OPENCODE_OUTPUT"
-    
-    PR_BODY="## Cloud Agent Task: $TASK_ID\n\n**Repository:** $REPOSITORY\n**Worker:** OpenCode\n**Model:** $OPENCODE_MODEL\n**Base Branch:** $BASE_BRANCH\n**Branch:** \`$BRANCH_NAME\`\n**Status:** $FINAL_STATUS\n\n### Summary\n$SUMMARY\n\n### Changes\n$(git diff --name-only HEAD~1 | sed 's/^/- /')\n\n### Verification Results\n$(printf '%s\n' "${VERIFICATION_PASSED[@]}" | sed 's/^/- ✅ /')\n$(printf '%s\n' "${VERIFICATION_FAILED[@]}" | sed 's/^/- ❌ /')\n\n### Instructions Executed\n$INSTRUCTIONS\n\n---\n*Generated by Cloud Agent HQ - OpenCode worker*"
-    
-    PR_OUTPUT=$(gh pr create --repo "$REPOSITORY" --base "$BASE_BRANCH" --head "$BRANCH_NAME" --title "cloud-agent: $TASK_ID" --body "$PR_BODY" 2>&1)
-    if [[ $? -eq 0 ]]; then
-        PR_URL=$(echo "$PR_OUTPUT" | grep -o 'https://github.com/[^ ]*')
-        PR_NUMBER=$(echo "$PR_URL" | grep -o '[0-9]*$')
-        echo "Created PR: $PR_URL (#$PR_NUMBER)"
-    else
-        echo "Failed to create PR: $PR_OUTPUT"
-        report_append_array "errors" "PR creation failed: $PR_OUTPUT"
-        FINAL_STATUS="failed"
-    fi
-else
-    SUMMARY="No changes made - $SUMMARY"
-    FINAL_STATUS="partial"
-fi
+# For now, just report test results
+FINAL_STATUS="partial"
+SUMMARY="OpenCode CLI tests completed. Exit codes: 1=$EXIT1, 2=$EXIT2, 3=$EXIT3, 4=$EXIT4, 5=$EXIT5, 6=$EXIT6"
 
 END_TIME=$(date +%s)
 DURATION=$((END_TIME - START_TIME))
 TOKENS_JSON='{"input": 0, "output": 0, "total": 0}'
 
-report_finalize "$FINAL_STATUS" "$SUMMARY" "$BRANCH_NAME" "$PR_NUMBER" "$PR_URL" "$CHANGES_ARRAY" "$(jq -n --argjson passed "$(echo "${VERIFICATION_PASSED[@]}" | jq -R . | jq -s .)" --argjson failed "$(echo "${VERIFICATION_FAILED[@]}" | jq -R . | jq -s .)" --arg output "$VERIFICATION_OUTPUT" '{commands_run: $passed + $failed, passed: $passed, failed: $failed, output: $output}')" "$(jq -n --argjson errors "$(cat "$REPORT_FILE" | jq -c '.errors')" '$errors')" "$(jq -n --argjson warnings "$(cat "$REPORT_FILE" | jq -c '.warnings')" '$warnings')" "$DURATION" "$TOKENS_JSON"
+CHANGES="[]"
+VERIFICATION_JSON='{"commands_run": [], "passed": [], "failed": [], "output": ""}'
+
+report_finalize "$FINAL_STATUS" "$SUMMARY" "" 0 "" "$CHANGES" "$VERIFICATION_JSON" "$(jq -n --argjson errors "$(cat "$REPORT_FILE" | jq -c '.errors')" '$errors')" "$(jq -n --argjson warnings "$(cat "$REPORT_FILE" | jq -c '.warnings')" '$warnings')" "$DURATION" "$TOKENS_JSON"
 
 echo "=== Task $TASK_ID completed with status: $FINAL_STATUS ==="
 echo "Duration: ${DURATION}s"
 echo "Report written to: $REPORT_FILE"
 
-if [[ "$FINAL_STATUS" == "success" ]]; then exit 0; elif [[ "$FINAL_STATUS" == "partial" ]]; then exit 0; else exit 1; fi
+exit 0
