@@ -1,0 +1,31 @@
+name: Worker - GH Clone Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: "Target repository (owner/name)"
+        required: true
+        type: string
+      base_branch:
+        description: "Base branch"
+        required: true
+        type: string
+        default: "main"
+
+permissions:
+  contents: read
+
+jobs:
+  execute:
+    name: GH Clone Test
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.CLOUD_AGENT_HQ_PAT }}
+    steps:
+      - name: Clone with gh
+        run: |
+          gh repo clone ${{ github.event.inputs.repository }} target-repo -- -b ${{ github.event.inputs.base_branch }}
+      - name: List files
+        working-directory: target-repo
+        run: ls -la
