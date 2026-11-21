@@ -23,8 +23,8 @@ on:
       timeout_minutes:
         description: "Timeout in minutes"
         required: true
-        type: string
-        default: "30"
+        type: number
+        default: 30
       tracking_issue:
         description: "Tracking issue number in Cloud-Agent-HQ"
         required: true
