@@ -1,0 +1,39 @@
+name: Worker - OpenCode Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      task_json:
+        description: "Full task contract JSON"
+        required: true
+        type: string
+      task_id:
+        description: "Task ID"
+        required: true
+        type: string
+      repository:
+        description: "Target repository (owner/name)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  execute:
+    name: Execute OpenCode Task
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Cloud-Agent-HQ
+        uses: actions/checkout@v4
+        with:
+          path: cloud-agent-hq
+      - name: Write task JSON
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const taskJson = `${{ github.event.inputs.task_json }}`;
+            const fs = require('fs');
+            fs.writeFileSync('task.json', taskJson);
+      - name: Print task
+        run: cat task.json | jq .
