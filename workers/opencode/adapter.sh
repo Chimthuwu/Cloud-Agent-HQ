@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cloud Agent HQ — OpenCode Worker Adapter
+# Cloud Agent HQ — OpenCode Worker Adapter (REST API mode)
 # Entry point for OpenCode worker execution in GitHub Actions
 
 set -euo pipefail
@@ -71,29 +71,57 @@ FULL_INSTRUCTIONS="$INSTRUCTIONS"
 [[ -f "README.md" ]] && FULL_INSTRUCTIONS+="\n\n--- REPOSITORY README.md ---\n$(cat README.md)"
 [[ -f "TODO.md" ]] && FULL_INSTRUCTIONS+="\n\n--- REPOSITORY TODO.md ---\n$(cat TODO.md)"
 
-INSTRUCTIONS_FILE="/tmp/opencode-instructions-$TASK_ID.txt"
-echo -e "$FULL_INSTRUCTIONS" > "$INSTRUCTIONS_FILE"
-
 echo "=== Starting OpenCode task: $TASK_ID ==="
 echo "Repository: $REPOSITORY"
 echo "Branch: $BASE_BRANCH"
 echo "Workspace: $WORK_DIR"
-echo "Instructions file: $INSTRUCTIONS_FILE (${#FULL_INSTRUCTIONS} chars)"
+echo "Instructions: ${#FULL_INSTRUCTIONS} chars"
 
 OPENCODE_OUTPUT="/tmp/opencode-output-$TASK_ID.log"
 OPENCODE_ERROR="/tmp/opencode-error-$TASK_ID.log"
 PERMS_ARG=$(echo "$TOOL_PERMISSIONS" | jq -r 'join(",")')
 
+# Start OpenCode server in background
+SERVER_PORT=4096
+SERVER_URL="http://localhost:$SERVER_PORT"
+echo "Starting OpenCode server on $SERVER_URL..."
+opencode serve --port $SERVER_PORT >"$OPENCODE_OUTPUT" 2>"$OPENCODE_ERROR" &
+SERVER_PID=$!
+
+# Wait for server to start
+sleep 5
+
+# Check if server is running
+if ! curl -s "$SERVER_URL/health" >/dev/null 2>&1; then
+    echo "Server not responding on /health, trying /api..."
+    sleep 5
+fi
+
+# Try to create a session and send message via API
+# First, let's see what API endpoints are available
+echo "Checking API endpoints..."
+curl -s "$SERVER_URL/api" 2>&1 | head -c 500
+echo ""
+
+# Try to send a message using the API
+# Based on OpenCode API patterns, we might need to:
+# 1. Create a session
+# 2. Send a message to the session
+
+# For now, let's try the CLI with --attach flag
 set +e
-# Use --file flag to attach instructions file, with a short message
 opencode run \
+    --attach "$SERVER_URL" \
     --model "$OPENCODE_MODEL" \
     --permission "$PERMS_ARG" \
-    --file "$INSTRUCTIONS_FILE" \
-    "Follow the instructions in the attached file to complete the task." \
-    2>"$OPENCODE_ERROR" | tee "$OPENCODE_OUTPUT"
+    "$FULL_INSTRUCTIONS" \
+    2>>"$OPENCODE_ERROR" | tee -a "$OPENCODE_OUTPUT"
 OPENCODE_EXIT=${PIPESTATUS[0]}
 set -e
+
+# Kill the server
+kill $SERVER_PID 2>/dev/null || true
+wait $SERVER_PID 2>/dev/null || true
 
 echo "DEBUG: OpenCode exit code: $OPENCODE_EXIT"
 if [[ -f "$OPENCODE_ERROR" ]]; then
