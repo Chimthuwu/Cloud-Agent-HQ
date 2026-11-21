@@ -1,0 +1,33 @@
+name: Worker - Checkout Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: "Target repository (owner/name)"
+        required: true
+        type: string
+      base_branch:
+        description: "Base branch"
+        required: true
+        type: string
+        default: "main"
+
+permissions:
+  contents: read
+
+jobs:
+  execute:
+    name: Checkout Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.event.inputs.repository }}
+          ref: ${{ github.event.inputs.base_branch }}
+          token: ${{ secrets.CLOUD_AGENT_HQ_PAT }}
+          path: target-repo
+      - name: List files
+        working-directory: target-repo
+        run: ls -la
