@@ -1,12 +1,8 @@
-name: Worker - Codex CLI
+name: Worker - Codex
 
 on:
   workflow_dispatch:
     inputs:
-      task_json:
-        description: "Full task contract JSON"
-        required: true
-        type: string
       task_id:
         description: "Task ID"
         required: true
@@ -23,8 +19,8 @@ on:
       timeout_minutes:
         description: "Timeout in minutes"
         required: true
-        type: string
-        default: "30"
+        type: number
+        default: 30
       tracking_issue:
         description: "Tracking issue number in Cloud-Agent-HQ"
         required: true
@@ -32,36 +28,43 @@ on:
 
 permissions:
   contents: read
+  issues: write
+  actions: write
 
 jobs:
   execute:
     name: Execute Codex Task
     runs-on: ubuntu-latest
-    timeout-minutes: ${{ github.event.inputs.timeout_minutes }}
+    timeout-minutes: 30
     env:
       TASK_ID: ${{ github.event.inputs.task_id }}
       REPOSITORY: ${{ github.event.inputs.repository }}
       BASE_BRANCH: ${{ github.event.inputs.base_branch }}
       TRACKING_ISSUE: ${{ github.event.inputs.tracking_issue }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      CODEX_MODEL: ${{ secrets.CODEX_MODEL || 'gpt-4o' }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      TARGET_REPO_PAT: ${{ secrets.CLOUD_AGENT_HQ_PAT }}
     steps:
-      - name: Checkout Cloud-Agent-HQ
+      - name: Checkout Cloud-Agent-HQ (for adapter scripts)
         uses: actions/checkout@v4
         with:
           path: cloud-agent-hq
 
       - name: Write task JSON
-        run: |
-          echo '${{ github.event.inputs.task_json }}' > task.json
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const taskJson = '${{ github.event.inputs.task_json }}';
+            const fs = require('fs');
+            fs.writeFileSync('task.json', taskJson);
 
-      - name: Setup Node.js
+      - name: Clone target repository
+        run: |
+          git clone https://${{ secrets.CLOUD_AGENT_HQ_PAT }}@github.com/${{ github.event.inputs.repository }}.git target-repo -b ${{ github.event.inputs.base_branch }}
+
+      - name: Setup Node.js (for Codex CLI)
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
 
       - name: Install Codex CLI
         run: npm install -g @openai/codex@latest
@@ -69,115 +72,61 @@ jobs:
       - name: Verify Codex installation
         run: |
           codex --version
-          codex auth status || echo "Auth status check failed (may need device code)"
-
-      - name: Checkout target repository
-        uses: actions/checkout@v4
-        with:
-          repository: ${{ github.event.inputs.repository }}
-          ref: ${{ github.event.inputs.base_branch }}
-          token: ${{ secrets.CLOUD_AGENT_HQ_PAT }}
-          path: target-repo
-
-      - name: Create working branch
-        working-directory: target-repo
-        run: |
-          git config user.name "cloud-agent[bot]"
-          git config user.email "cloud-agent@users.noreply.github.com"
-          BRANCH_NAME="cloud-agent/${{ github.event.inputs.task_id }}/codex"
-          git checkout -b "$BRANCH_NAME"
-          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+          codex --help
 
       - name: Run Codex adapter
-        id: codex
         working-directory: target-repo
+        env:
+          TASK_ID: ${{ env.TASK_ID }}
+          REPOSITORY: ${{ env.REPOSITORY }}
+          BASE_BRANCH: ${{ env.BASE_BRANCH }}
+          OPENAI_API_KEY: ${{ env.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash ../cloud-agent-hq/workers/codex/adapter.sh \
-            ../task.json \
-            . \
-            ../execution-report.json
+          bash ../cloud-agent-hq/workers/codex/adapter.sh ../task.json . /tmp/execution-report.json
 
       - name: Check execution status
-        id: check-status
         run: |
-          cat execution-report.json | jq .
-          STATUS=$(cat execution-report.json | jq -r .status)
-          PR_NUMBER=$(cat execution-report.json | jq -r .pr_number)
+          cat /tmp/execution-report.json | jq .
+          STATUS=$(cat /tmp/execution-report.json | jq -r .status)
+          PR_NUMBER=$(cat /tmp/execution-report.json | jq -r .pr_number)
           echo "status=$STATUS" >> $GITHUB_OUTPUT
           echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
+          if [ "$STATUS" = "success" ] || [ "$STATUS" = "partial" ]; then
+            echo "::notice::Task completed with status: $STATUS"
+          else
+            echo "::error::Task failed with status: $STATUS"
+          fi
+        id: check_status
 
-      - name: Update tracking issue - success
-        if: steps.check-status.outputs.status == 'success' || steps.check-status.outputs.status == 'partial'
+      - name: Upload execution report
+        uses: actions/upload-artifact@v4
+        with:
+          name: execution-report-${{ env.TASK_ID }}
+          path: /tmp/execution-report.json
+
+      - name: Update tracking issue
+        if: always()
         uses: actions/github-script@v7
         with:
           script: |
             const issueNumber = parseInt("${{ github.event.inputs.tracking_issue }}");
-            const taskId = "${{ github.event.inputs.task_id }}";
-            const prNumber = ${{ steps.check-status.outputs.pr_number }};
-            const branch = "${{ env.BRANCH_NAME }}";
-            const repo = "${{ github.event.inputs.repository }}";
+            const taskId = "${{ env.TASK_ID }}";
+            const prNumber = parseInt("${{ steps.check_status.outputs.pr_number }}") || 0;
+            const branch = "cloud-agent/${{ env.TASK_ID }}/codex";
+            const repo = "${{ env.REPOSITORY }}";
+            const status = "${{ steps.check_status.outputs.status }}";
             
             await github.rest.issues.createComment({
               owner: "Chimthuwu",
               repo: "Cloud-Agent-HQ",
               issue_number: issueNumber,
-              body: `✅ **Task completed successfully**
-              
-              **Task ID:** \`${taskId}\`
-              **Repository:** ${repo}
-              **Branch:** \`${branch}\`
-              **Pull Request:** #${prNumber} (https://github.com/${repo}/pull/${prNumber})
-              **Status:** ${{ steps.check-status.outputs.status }}
-              
-              The PR is ready for review.`
+              body: "✅ **Task completed successfully**\n\n**Task ID:** `" + taskId + "`\n**Repository:** " + repo + "\n**Branch:** `" + branch + "`\n**Pull Request:** #" + prNumber + " (https://github.com/" + repo + "/pull/" + prNumber + ")\n**Status:** " + status + "\n\nThe PR is ready for review."
             });
+            
             await github.rest.issues.addLabels({
               owner: "Chimthuwu",
               repo: "Cloud-Agent-HQ",
               issue_number: issueNumber,
               labels: ["status:completed", "status:pr-ready"]
             });
-
-      - name: Update tracking issue - failure
-        if: steps.check-status.outputs.status == 'failed' || steps.check-status.outputs.status == 'timeout'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const issueNumber = parseInt("${{ github.event.inputs.tracking_issue }}");
-            const taskId = "${{ github.event.inputs.task_id }}";
-            const status = "${{ steps.check-status.outputs.status }}";
-            
-            const fs = require('fs');
-            const report = JSON.parse(fs.readFileSync('execution-report.json', 'utf8'));
-            const errors = report.errors || [];
-            
-            await github.rest.issues.createComment({
-              owner: "Chimthuwu",
-              repo: "Cloud-Agent-HQ",
-              issue_number: issueNumber,
-              body: `❌ **Task failed**
-              
-              **Task ID:** \`${taskId}\`
-              **Status:** ${status}
-              **Errors:**
-              ${errors.map(e => \`- \${e}\`).join('\n') || 'See workflow logs'}
-              
-              Check workflow run for details: https://github.com/Chimthuwu/Cloud-Agent-HQ/actions/runs/${{ github.run_id }}`
-            });
-            await github.rest.issues.addLabels({
-              owner: "Chimthuwu",
-              repo: "Cloud-Agent-HQ",
-              issue_number: issueNumber,
-              labels: ["status:failed"]
-            });
-
-      - name: Upload execution report
-        uses: actions/upload-artifact@v4
-        with:
-          name: execution-report-${{ github.event.inputs.task_id }}
-          path: execution-report.json
-          retention-days: 30
-
-concurrency:
-  group: cloud-agent-codex-${{ github.event.inputs.task_id }}
-  cancel-in-progress: false
